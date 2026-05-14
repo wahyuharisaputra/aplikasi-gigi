@@ -15,63 +15,37 @@ class VideoPlayerScreen extends StatefulWidget {
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late final WebViewController _controller;
   bool _isLoading = true;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
 
-    // HTML dengan YouTube embed yang akan diload di WebView
-    final String youtubeEmbedHtml = '''
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #000; }
-      .video-container {
-        position: relative;
-        width: 100%;
-        padding-bottom: 56.25%;
-        height: 0;
-        overflow: hidden;
-      }
-      .video-container iframe {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border: 0;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="video-container">
-      <iframe
-        src="https://www.youtube.com/embed/${widget.video.youtubeId}?autoplay=1&rel=0&playsinline=1&enablejsapi=1"
-        allow="autoplay; fullscreen; accelerometer; encrypted-media; gyroscope; picture-in-picture"
-        allowfullscreen>
-      </iframe>
-    </div>
-  </body>
-</html>
-''';
+    // Metode paling andal: load URL embed YouTube langsung
+    final embedUrl =
+        'https://www.youtube.com/embed/${widget.video.youtubeId}'
+        '?autoplay=0&rel=0&playsinline=1&fs=1';
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.black)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onPageStarted: (_) {
+            if (mounted) setState(() { _isLoading = true; _hasError = false; });
+          },
           onPageFinished: (_) {
             if (mounted) setState(() => _isLoading = false);
           },
-          onWebResourceError: (error) {
-            if (mounted) setState(() => _isLoading = false);
+          onWebResourceError: (WebResourceError error) {
+            // Hanya anggap error jika kode error serius (bukan warning)
+            if (error.errorCode != -1) {
+              if (mounted) setState(() { _isLoading = false; _hasError = true; });
+            }
           },
         ),
       )
-      ..loadHtmlString(youtubeEmbedHtml, baseUrl: 'https://www.youtube.com');
+      ..loadRequest(Uri.parse(embedUrl));
   }
 
   Future<void> _openInYoutubeApp() async {
@@ -80,6 +54,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     );
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      // Fallback ke browser jika YouTube app tidak ada
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
     }
   }
 
@@ -96,24 +73,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        actions: [
-          IconButton(
-            onPressed: _openInYoutubeApp,
-            icon: const Icon(Icons.open_in_new, color: Colors.white70),
-            tooltip: 'Buka di YouTube',
-          ),
-        ],
         elevation: 0,
       ),
       body: Column(
         children: [
-          // WebView area dengan YouTube embed
+          // Area Video 16:9
           AspectRatio(
             aspectRatio: 16 / 9,
             child: Stack(
               children: [
-                WebViewWidget(controller: _controller),
-                if (_isLoading)
+                // WebView dengan YouTube Embed
+                if (!_hasError)
+                  WebViewWidget(controller: _controller),
+
+                // Loading indicator
+                if (_isLoading && !_hasError)
                   Container(
                     color: Colors.black,
                     child: const Center(
@@ -124,7 +98,39 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                           SizedBox(height: 12),
                           Text(
                             'Memuat video...',
+                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // Tampilan error + tombol retry
+                if (_hasError)
+                  Container(
+                    color: Colors.black,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.wifi_off, color: Colors.white54, size: 48),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Video tidak bisa dimuat',
                             style: TextStyle(color: Colors.white70),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() { _hasError = false; _isLoading = true; });
+                              _controller.reload();
+                            },
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Coba Lagi'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              foregroundColor: Colors.white,
+                            ),
                           ),
                         ],
                       ),
@@ -134,7 +140,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             ),
           ),
 
-          // Info Video
+          // Info dan tombol
           Expanded(
             child: Container(
               color: Colors.white,
@@ -155,18 +161,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(
-                          Icons.access_time,
-                          size: 16,
-                          color: Colors.grey,
-                        ),
+                        const Icon(Icons.access_time, size: 16, color: Colors.grey),
                         const SizedBox(width: 4),
                         Text(
                           widget.video.duration,
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 13,
-                          ),
+                          style: const TextStyle(color: Colors.grey, fontSize: 13),
                         ),
                       ],
                     ),
@@ -183,20 +182,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Tombol cadangan buka di YouTube App
-                    OutlinedButton.icon(
-                      onPressed: _openInYoutubeApp,
-                      icon: const Icon(Icons.open_in_new, size: 18),
-                      label: const Text('Buka di Aplikasi YouTube'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    // Tombol cadangan buka di YouTube
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _openInYoutubeApp,
+                        icon: const Icon(Icons.open_in_new, size: 18),
+                        label: const Text('Jika tidak bisa, buka di YouTube'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
                       ),
                     ),
