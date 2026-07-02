@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/video_model.dart';
+import 'package:flutter/foundation.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
   final VideoModel video;
@@ -13,39 +14,27 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  late final WebViewController _controller;
-  bool _isLoading = true;
-  bool _hasError = false;
+  late final YoutubePlayerController _controller;
 
   @override
   void initState() {
     super.initState();
+    _controller = YoutubePlayerController.fromVideoId(
+      videoId: widget.video.youtubeId,
+      autoPlay: false,
+      params: const YoutubePlayerParams(
+        showControls: true,
+        mute: false,
+        showFullscreenButton: true,
+        loop: false,
+      ),
+    );
+  }
 
-    // Metode paling andal: load URL embed YouTube langsung
-    final embedUrl =
-        'https://www.youtube.com/embed/${widget.video.youtubeId}'
-        '?autoplay=0&rel=0&playsinline=1&fs=1';
-
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.black)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) {
-            if (mounted) setState(() { _isLoading = true; _hasError = false; });
-          },
-          onPageFinished: (_) {
-            if (mounted) setState(() => _isLoading = false);
-          },
-          onWebResourceError: (WebResourceError error) {
-            // Hanya anggap error jika kode error serius (bukan warning)
-            if (error.errorCode != -1) {
-              if (mounted) setState(() { _isLoading = false; _hasError = true; });
-            }
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(embedUrl));
+  @override
+  void dispose() {
+    _controller.close();
+    super.dispose();
   }
 
   Future<void> _openInYoutubeApp() async {
@@ -55,7 +44,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      // Fallback ke browser jika YouTube app tidak ada
       await launchUrl(uri, mode: LaunchMode.platformDefault);
     }
   }
@@ -80,63 +68,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           // Area Video 16:9
           AspectRatio(
             aspectRatio: 16 / 9,
-            child: Stack(
-              children: [
-                // WebView dengan YouTube Embed
-                if (!_hasError)
-                  WebViewWidget(controller: _controller),
-
-                // Loading indicator
-                if (_isLoading && !_hasError)
-                  Container(
-                    color: Colors.black,
-                    child: const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(color: Colors.red),
-                          SizedBox(height: 12),
-                          Text(
-                            'Memuat video...',
-                            style: TextStyle(color: Colors.white70, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // Tampilan error + tombol retry
-                if (_hasError)
-                  Container(
-                    color: Colors.black,
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.wifi_off, color: Colors.white54, size: 48),
-                          const SizedBox(height: 12),
-                          const Text(
-                            'Video tidak bisa dimuat',
-                            style: TextStyle(color: Colors.white70),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              setState(() { _hasError = false; _isLoading = true; });
-                              _controller.reload();
-                            },
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Coba Lagi'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
+            child: YoutubePlayer(
+              controller: _controller,
             ),
           ),
 
